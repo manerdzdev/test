@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PancakeSwap Prediction Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0a0f;color:#e0e0e0;font-family:'Segoe UI',sans-serif;font-size:13px}
+  header{background:#111827;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1f2937}
+  header h1{font-size:18px;font-weight:700;color:#fff}
+  header h1 span{color:#f59e0b}
+  #status-bar{display:flex;gap:16px;align-items:center;font-size:12px}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 1.5s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .grid{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto;gap:12px;padding:14px}
+  .card{background:#111827;border:1px solid #1f2937;border-radius:10px;padding:14px}
+  .card h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:10px}
+  .card.wide{grid-column:span 2}
+  .card.full{grid-column:span 3}
+  /* Decision card */
+  #decision-card{border:2px solid #374151;transition:border-color .3s}
+  #decision-card.bet-up{border-color:#22c55e}
+  #decision-card.bet-down{border-color:#ef4444}
+  #decision-card.skip{border-color:#6b7280}
+  .decision-action{font-size:28px;font-weight:800;letter-spacing:.05em;margin:6px 0}
+  .decision-action.up{color:#22c55e}
+  .decision-action.down{color:#ef4444}
+  .decision-action.skip{color:#6b7280}
+  /* Metric rows */
+  .metric-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #1f2937}
+  .metric-row:last-child{border-bottom:none}
+  .metric-label{color:#9ca3af;font-size:12px}
+  .metric-value{font-weight:600;font-size:13px}
+  .up{color:#22c55e}.down{color:#ef4444}.neutral{color:#9ca3af}.warn{color:#f59e0b}
+  /* Pool bar */
+  .pool-bar-wrap{margin:8px 0;height:22px;border-radius:6px;overflow:hidden;display:flex}
+  .pool-bar-up{background:#22c55e;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;transition:width .5s}
+  .pool-bar-down{background:#ef4444;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;transition:width .5s}
+  /* EV bars */
+  .ev-row{display:flex;align-items:center;gap:8px;margin:5px 0}
+  .ev-label{width:80px;font-size:12px;color:#9ca3af}
+  .ev-bar-wrap{flex:1;height:18px;background:#1f2937;border-radius:4px;overflow:hidden}
+  .ev-bar{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:6px;font-size:11px;font-weight:700;transition:width .5s}
+  /* Markov */
+  .markov-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+  .markov-cell{background:#1f2937;border-radius:6px;padding:8px;text-align:center}
+  .markov-cell .from{font-size:10px;color:#6b7280}
+  .markov-cell .to{font-size:10px;color:#6b7280;margin-top:2px}
+  .markov-cell .prob{font-size:18px;font-weight:700;margin:2px 0}
+  /* Trade log */
+  .trade-row{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #1f2937;font-size:11px;align-items:center}
+  .trade-row:last-child{border-bottom:none}
+  .badge{padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+  .badge.win{background:#14532d;color:#22c55e}
+  .badge.loss{background:#450a0a;color:#ef4444}
+  .badge.up-b{background:#14532d;color:#22c55e}
+  .badge.down-b{background:#450a0a;color:#ef4444}
+  /* Outcome strip */
+  .outcome-strip{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+  .outcome-pill{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700}
+  .outcome-pill.UP{background:#14532d;color:#22c55e}
+  .outcome-pill.DOWN{background:#450a0a;color:#ef4444}
+  /* Chart containers */
+  .chart-wrap{position:relative;height:180px}
+  .chart-wrap.tall{height:220px}
+  /* LSTM card */
+  #lstm-card.active{border-color:#6366f1}
+  #lstm-card.active h3{color:#a5b4fc}
+  .lstm-param-bar{height:4px;background:#1f2937;border-radius:2px;margin-top:3px;overflow:hidden}
+  .lstm-param-fill{height:100%;background:#6366f1;border-radius:2px;transition:width .5s}
+font-size:22px;font-weight:800;color:#f59e0b;text-align:center;margin:6px 0}
+  #countdown-bar-wrap{height:6px;background:#1f2937;border-radius:3px;overflow:hidden;margin-top:4px}
+  #countdown-bar{height:100%;background:#f59e0b;border-radius:3px;transition:width .9s linear}
+
+
+  /* ── Current round status banner ─────────────────────────────────────── */
+  #round-status-banner{display:flex;align-items:center;gap:16px;padding:10px 20px;
+    border-radius:10px;margin:0 14px 0 14px;border:2px solid #374151;transition:all .4s}
+  #round-status-banner.bet-up{background:rgba(34,197,94,0.08);border-color:#22c55e}
+  #round-status-banner.bet-down{background:rgba(239,68,68,0.08);border-color:#ef4444}
+  #round-status-banner.skip{background:rgba(107,114,128,0.08);border-color:#374151}
+  #round-status-banner.waiting{background:rgba(245,158,11,0.06);border-color:#f59e0b}
+  .rsb-action{font-size:26px;font-weight:900;letter-spacing:.06em;min-width:130px}
+  .rsb-action.up{color:#22c55e}.rsb-action.down{color:#ef4444}.rsb-action.skip{color:#6b7280}
+  .rsb-divider{width:1px;height:40px;background:#374151}
+  .rsb-item{display:flex;flex-direction:column;gap:2px}
+  .rsb-label{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}
+  .rsb-val{font-size:14px;font-weight:700}
+  .rsb-reason{font-size:11px;color:#6b7280;margin-left:auto}
+
+  /* ── Tabs ─────────────────────────────────────────────────────────────── */
+  .tab-nav{display:flex;gap:0;background:#111827;border-bottom:1px solid #1f2937;padding:0 16px}
+  .tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:#6b7280;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:all .2s}
+  .tab-btn:hover{color:#e0e0e0}
+  .tab-btn.active{color:#f59e0b;border-bottom-color:#f59e0b}
+  .tab-panel{display:none}
+  .tab-panel.active{display:block}
+  /* ── Log viewer ────────────────────────────────────────────────────────── */
+  .log-toolbar{display:flex;gap:10px;align-items:center;padding:12px 14px;background:#111827;border-bottom:1px solid #1f2937;flex-wrap:wrap}
+  .log-toolbar button{padding:6px 14px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e0e0e0;cursor:pointer;font-size:12px;font-weight:600;transition:all .2s}
+  .log-toolbar button:hover{background:#374151}
+  .log-toolbar button.active{background:#f59e0b;color:#000;border-color:#f59e0b}
+  .log-toolbar input{padding:6px 10px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e0e0e0;font-size:12px;width:180px}
+  .log-toolbar select{padding:6px 10px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e0e0e0;font-size:12px}
+  .log-stats{display:flex;gap:20px;padding:10px 14px;background:#0f172a;border-bottom:1px solid #1f2937;font-size:12px;flex-wrap:wrap}
+  .log-stat{display:flex;flex-direction:column;gap:2px}
+  .log-stat .ls-label{color:#6b7280;font-size:10px;text-transform:uppercase}
+  .log-stat .ls-val{font-weight:700;font-size:15px}
+  .log-table-wrap{overflow-x:auto;max-height:calc(100vh - 280px);overflow-y:auto}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  thead th{position:sticky;top:0;background:#111827;color:#9ca3af;padding:8px 10px;text-align:left;border-bottom:1px solid #1f2937;cursor:pointer;white-space:nowrap;user-select:none}
+  thead th:hover{color:#e0e0e0}
+  thead th.sort-asc::after{content:' ▲'}
+  thead th.sort-desc::after{content:' ▼'}
+  tbody tr{border-bottom:1px solid #1a2030;transition:background .15s}
+  tbody tr:hover{background:#1f2937}
+  tbody td{padding:7px 10px;white-space:nowrap}
+  .log-badge{padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;display:inline-block}
+  .log-badge.WIN{background:#14532d;color:#22c55e}
+  .log-badge.LOSS{background:#450a0a;color:#ef4444}
+  .log-badge.SKIP{background:#1f2937;color:#6b7280}
+  .log-badge.signal{background:#1e3a5f;color:#60a5fa}
+  .log-badge.UP{background:#14532d;color:#22c55e}
+  .log-badge.DOWN{background:#450a0a;color:#ef4444}
+  .log-badge.TRENDING{background:#14532d;color:#22c55e}
+  .log-badge.MEAN-REVERTING{background:#450a0a;color:#ef4444}
+  .log-badge.RANDOM{background:#1f2937;color:#9ca3af}
+  .detail-row{display:none;background:#0f172a}
+  .detail-row td{padding:10px 14px}
+  .detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+  .detail-item{background:#1f2937;border-radius:6px;padding:8px}
+  .detail-item .di-label{font-size:10px;color:#6b7280;margin-bottom:2px}
+  .detail-item .di-val{font-size:13px;font-weight:600}
+  .no-data{text-align:center;padding:40px;color:#6b7280}
+
+  /* Responsive */
+  @media(max-width:900px){.grid{grid-template-columns:1fr 1fr}.card.wide{grid-column:span 2}.card.full{grid-column:span 2}}
+  @media(max-width:600px){.grid{grid-template-columns:1fr}.card.wide,.card.full{grid-column:span 1}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🥞 PancakeSwap <span>Prediction</span> Dashboard</h1>
+  <div id="status-bar">
+    <div class="status-dot" id="dot"></div>
+    <span id="status-text">Connecting...</span>
+    <span style="color:#6b7280">|</span>
+    <span>Updated: <b id="last-update">--:--:--</b></span>
+    <span style="color:#6b7280">|</span>
+    <span>WinRate: <b id="win-rate-hdr" class="up">--%</b></span>
+  </div>
+</header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
+  <button class="tab-btn" data-tab="logs" onclick="switchTab('logs')">📋 Round Logs</button>
+</nav>
+
+<div id="tab-dashboard" class="tab-panel active">
+
+<div id="round-status-banner" class="skip" style="margin-top:12px">
+  <div style="min-width:180px">
+    <div class="rsb-label">🔒 THIS Round (locked from prev signal)</div>
+    <div class="rsb-action skip" id="rsb-action">SKIP</div>
+    <div style="font-size:11px;font-weight:700;margin-top:4px" id="rsb-result"></div>
+    <div style="font-size:10px;color:#6b7280;margin-top:2px" id="rsb-locked-at"></div>
+  </div>
+  <div class="rsb-divider"></div>
+  <div class="rsb-item"><div class="rsb-label">Epoch</div><div class="rsb-val" id="rsb-epoch">--</div></div>
+  <div class="rsb-divider"></div>
+  <div class="rsb-item"><div class="rsb-label">Lock in</div><div class="rsb-val warn" id="rsb-lockin">--</div></div>
+  <div class="rsb-divider"></div>
+  <div class="rsb-item"><div class="rsb-label">EV UP</div><div class="rsb-val" id="rsb-ev-up">--</div></div>
+  <div class="rsb-divider"></div>
+  <div class="rsb-item"><div class="rsb-label">EV DOWN</div><div class="rsb-val" id="rsb-ev-dn">--</div></div>
+  <div class="rsb-divider"></div>
+  <div class="rsb-item"><div class="rsb-label">Kelly Bet</div><div class="rsb-val warn" id="rsb-kelly">--</div></div>
+  <div class="rsb-divider"></div>
+  <div class="rsb-item"><div class="rsb-label">Pool UP</div><div class="rsb-val up" id="rsb-pool-up">--</div></div>
+  <div class="rsb-divider"></div>
+  <div class="rsb-item"><div class="rsb-label">Pool DOWN</div><div class="rsb-val down" id="rsb-pool-dn">--</div></div>
+  <div class="rsb-divider"></div>
+  <div class="rsb-item"><div class="rsb-label">Hurst H</div><div class="rsb-val" id="rsb-hurst">--</div></div>
+  <div class="rsb-reason" id="rsb-reason"></div>
+</div>
+<div id="rsb-next-label" style="margin:4px 14px 0 14px;padding:6px 14px;border-radius:6px;transition:all .3s"></div>
+
+<div class="grid">
+
+  <!-- DECISION -->
+  <div class="card" id="decision-card">
+    <h3>Next Round Signal <span style="color:#4b5563;font-size:10px;font-weight:400">(updates live)</span></h3>
+    <div class="decision-action skip" id="decision-action">SKIP</div>
+    <div id="decision-reason" style="color:#6b7280;font-size:11px;margin-bottom:8px">Initializing...</div>
+    <div class="metric-row"><span class="metric-label">Kelly Bet</span><span class="metric-value warn" id="kelly-pct">0.0%</span></div>
+    <div class="metric-row"><span class="metric-label">Confidence</span><span class="metric-value" id="confidence">0.00</span></div>
+    <div class="metric-row"><span class="metric-label">P(UP)</span><span class="metric-value up" id="p-up">0.50</span></div>
+    <div class="metric-row"><span class="metric-label">P(DOWN)</span><span class="metric-value down" id="p-down">0.50</span></div>
+  </div>
+
+  <!-- LSTM CONTROLLER -->
+  <div class="card" id="lstm-card" style="border:1px solid #1f2937">
+    <h3>LSTM Controller <span id="lstm-badge" style="font-size:10px;padding:2px 7px;border-radius:10px;background:#1f2937;color:#6b7280;font-weight:600;margin-left:6px">OFFLINE</span></h3>
+    <div class="metric-row"><span class="metric-label">Source</span><span class="metric-value" id="lstm-source" style="color:#f59e0b">default</span></div>
+    <div class="metric-row"><span class="metric-label">Wavelet Level</span><span class="metric-value" id="lstm-wl">1</span></div>
+    <div class="metric-row"><span class="metric-label">Hurst Window</span><span class="metric-value" id="lstm-hw">400</span></div>
+    <div class="metric-row"><span class="metric-label">Fuzzy Threshold</span><span class="metric-value" id="lstm-ft">0.45</span></div>
+    <div class="metric-row"><span class="metric-label">Slope Thresh</span><span class="metric-value" id="lstm-st">0.07</span></div>
+    <div class="metric-row"><span class="metric-label">Lookback</span><span class="metric-value" id="lstm-lb">3</span></div>
+    <div class="metric-row" style="margin-top:6px"><span class="metric-label">Pool Skew Gate</span><span class="metric-value warn" id="pool-skew-thresh">65%</span></div>
+    <div class="metric-row"><span class="metric-label">Pool UP%</span><span class="metric-value" id="pool-up-pct-val">--</span></div>
+  </div>
+
+  <!-- ROUND INFO -->
+  <div class="card">
+    <h3>Current Round</h3>
+    <div class="metric-row"><span class="metric-label">Epoch</span><span class="metric-value" id="epoch">--</span></div>
+    <div class="metric-row"><span class="metric-label">Lock in</span><span class="metric-value warn" id="lock-in">--</span></div>
+    <div id="countdown">--s</div>
+    <div id="countdown-bar-wrap"><div id="countdown-bar" style="width:100%"></div></div>
+    <div class="metric-row" style="margin-top:8px"><span class="metric-label">Live Price</span><span class="metric-value" id="live-price">$--</span></div>
+    <div class="metric-row"><span class="metric-label">Lock Price</span><span class="metric-value neutral" id="lock-price">--</span></div>
+  </div>
+
+  <!-- HURST -->
+  <div class="card">
+    <h3>Hurst Exponent</h3>
+    <div style="font-size:32px;font-weight:800;text-align:center;margin:6px 0" id="hurst-val">0.500</div>
+    <div style="text-align:center;font-size:12px;margin-bottom:8px" id="hurst-label">RANDOM</div>
+    <div class="metric-row"><span class="metric-label">H &gt; 0.6</span><span class="metric-value up">Trending → trust slope</span></div>
+    <div class="metric-row"><span class="metric-label">H &lt; 0.4</span><span class="metric-value down">Mean-rev → fade slope</span></div>
+    <div class="metric-row"><span class="metric-label">H ≈ 0.5</span><span class="metric-value neutral">Random → skip</span></div>
+  </div>
+
+  <!-- PRICE CHART -->
+  <div class="card full">
+    <h3>BNB/USD — Raw Chainlink vs DWT Smoothed</h3>
+    <div class="chart-wrap tall"><canvas id="priceChart"></canvas></div>
+  </div>
+
+  <!-- SLOPE CHART -->
+  <div class="card wide">
+    <h3>DWT Slope — Direction Indicator</h3>
+    <div class="chart-wrap"><canvas id="slopeChart"></canvas></div>
+  </div>
+
+  <!-- HURST CHART -->
+  <div class="card">
+    <h3>Rolling Hurst</h3>
+    <div class="chart-wrap"><canvas id="hurstChart"></canvas></div>
+  </div>
+
+  <!-- POOL -->
+  <div class="card">
+    <h3>Pool Sizes</h3>
+    <div class="pool-bar-wrap">
+      <div class="pool-bar-up" id="pool-bar-up" style="width:50%">UP</div>
+      <div class="pool-bar-down" id="pool-bar-down" style="width:50%">DOWN</div>
+    </div>
+    <div class="metric-row"><span class="metric-label">UP Pool</span><span class="metric-value up" id="bull-bnb">-- BNB</span></div>
+    <div class="metric-row"><span class="metric-label">DOWN Pool</span><span class="metric-value down" id="bear-bnb">-- BNB</span></div>
+    <div class="metric-row"><span class="metric-label">Total</span><span class="metric-value" id="total-bnb">-- BNB</span></div>
+    <div class="metric-row"><span class="metric-label">Mult UP</span><span class="metric-value up" id="mult-up">--x</span></div>
+    <div class="metric-row"><span class="metric-label">Mult DOWN</span><span class="metric-value down" id="mult-down">--x</span></div>
+  </div>
+
+  <!-- EV -->
+  <div class="card">
+    <h3>Expected Value</h3>
+    <div class="ev-row">
+      <div class="ev-label">EV UP</div>
+      <div class="ev-bar-wrap"><div class="ev-bar" id="ev-bar-up" style="width:0%;background:#22c55e">--</div></div>
+    </div>
+    <div class="ev-row">
+      <div class="ev-label">EV DOWN</div>
+      <div class="ev-bar-wrap"><div class="ev-bar" id="ev-bar-down" style="width:0%;background:#ef4444">--</div></div>
+    </div>
+    <div class="metric-row" style="margin-top:8px"><span class="metric-label">EV UP</span><span class="metric-value" id="ev-up-val">--</span></div>
+    <div class="metric-row"><span class="metric-label">EV DOWN</span><span class="metric-value" id="ev-down-val">--</span></div>
+    <div class="metric-row"><span class="metric-label">Kelly UP</span><span class="metric-value warn" id="kelly-up">--%</span></div>
+    <div class="metric-row"><span class="metric-label">Kelly DOWN</span><span class="metric-value warn" id="kelly-down">--%</span></div>
+  </div>
+
+  <!-- MARKOV -->
+  <div class="card">
+    <h3>Markov Chain</h3>
+    <div id="outcomes-strip" class="outcome-strip"></div>
+    <div class="markov-grid" style="margin-top:10px">
+      <div class="markov-cell">
+        <div class="from">After UP</div>
+        <div class="prob up" id="m-uu">0.50</div>
+        <div class="to">→ UP</div>
+      </div>
+      <div class="markov-cell">
+        <div class="from">After UP</div>
+        <div class="prob down" id="m-ud">0.50</div>
+        <div class="to">→ DOWN</div>
+      </div>
+      <div class="markov-cell">
+        <div class="from">After DOWN</div>
+        <div class="prob up" id="m-du">0.50</div>
+        <div class="to">→ UP</div>
+      </div>
+      <div class="markov-cell">
+        <div class="from">After DOWN</div>
+        <div class="prob down" id="m-dd">0.50</div>
+        <div class="to">→ DOWN</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIRTUAL BET TRACKER -->
+  <div class="card full" style="border:1px solid #374151">
+    <h3 style="display:flex;align-items:center;gap:12px">
+      Virtual Bets
+      <span style="font-size:11px;font-weight:400;color:#6b7280">(what would happen if you bet every SKIP round)</span>
+      <span style="margin-left:auto;display:flex;gap:16px;font-size:12px">
+        <span>WR: <b id="virt-wr" class="neutral">--%</b></span>
+        <span>W/L: <b id="virt-wl" class="neutral">0/0</b></span>
+        <span>P&amp;L: <b id="virt-pnl" class="neutral">0.00 BNB</b></span>
+      </span>
+    </h3>
+    <div id="virtual-log" style="max-height:240px;overflow-y:auto"></div>
+  </div>
+
+  <!-- UNIFIED ROUND LOG -->
+  <div class="card full">
+    <h3 style="display:flex;align-items:center;gap:12px">
+      Round Log (Live)
+      <span style="color:#6b7280;font-weight:400;font-size:11px" id="wr-detail"></span>
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <button onclick="setDashFilter('all',this)"  class="dash-filter active" style="padding:3px 10px;border-radius:4px;border:1px solid #374151;background:#1f2937;color:#e0e0e0;cursor:pointer;font-size:11px">All</button>
+        <button onclick="setDashFilter('BET',this)"  class="dash-filter" style="padding:3px 10px;border-radius:4px;border:1px solid #374151;background:#1f2937;color:#e0e0e0;cursor:pointer;font-size:11px">BET</button>
+        <button onclick="setDashFilter('WIN',this)"  class="dash-filter" style="padding:3px 10px;border-radius:4px;border:1px solid #374151;background:#1f2937;color:#e0e0e0;cursor:pointer;font-size:11px">WIN</button>
+        <button onclick="setDashFilter('LOSS',this)" class="dash-filter" style="padding:3px 10px;border-radius:4px;border:1px solid #374151;background:#1f2937;color:#e0e0e0;cursor:pointer;font-size:11px">LOSS</button>
+        <button onclick="setDashFilter('outcome',this)" class="dash-filter" style="padding:3px 10px;border-radius:4px;border:1px solid #374151;background:#1f2937;color:#e0e0e0;cursor:pointer;font-size:11px">Outcomes</button>
+      </span>
+    </h3>
+    <div id="trade-log" style="max-height:320px;overflow-y:auto"></div>
+  </div>
+
+</div>
+</div>
+
+<!-- LOG VIEWER TAB -->
+<div id="tab-logs" class="tab-panel">
+  <div class="log-toolbar">
+    <button class="active" onclick="setFilter('all',this)">All</button>
+    <button onclick="setFilter('outcome',this)">Outcomes only</button>
+    <button onclick="setFilter('WIN',this)">WIN</button>
+    <button onclick="setFilter('LOSS',this)">LOSS</button>
+    <button onclick="setFilter('SKIP',this)">SKIP</button>
+    <button onclick="setFilter('BET',this)">BET only</button>
+    <input type="text" id="log-search" placeholder="Search epoch / time..." oninput="renderLogTable()"/>
+    <select id="log-sort" onchange="renderLogTable()">
+      <option value="ts_desc">Newest first</option>
+      <option value="ts_asc">Oldest first</option>
+      <option value="epoch_desc">Epoch ↓</option>
+      <option value="ev_desc">EV ↓</option>
+      <option value="kelly_desc">Kelly ↓</option>
+    </select>
+    <button onclick="loadLogs()" style="margin-left:auto">🔄 Refresh</button>
+    <button onclick="exportCSV()">⬇ Export CSV</button>
+    <span id="log-file-name" style="color:#6b7280;font-size:11px"></span>
+  </div>
+
+  <div class="log-stats">
+    <div class="log-stat"><span class="ls-label">Total Entries</span><span class="ls-val" id="ls-total">--</span></div>
+    <div class="log-stat"><span class="ls-label">Rounds</span><span class="ls-val" id="ls-rounds">--</span></div>
+    <div class="log-stat"><span class="ls-label">Bets Placed</span><span class="ls-val" id="ls-bets">--</span></div>
+    <div class="log-stat"><span class="ls-label">Wins</span><span class="ls-val up" id="ls-wins">--</span></div>
+    <div class="log-stat"><span class="ls-label">Losses</span><span class="ls-val down" id="ls-losses">--</span></div>
+    <div class="log-stat"><span class="ls-label">Win Rate</span><span class="ls-val warn" id="ls-wr">--%</span></div>
+    <div class="log-stat"><span class="ls-label">Avg EV (bets)</span><span class="ls-val" id="ls-avg-ev">--</span></div>
+    <div class="log-stat"><span class="ls-label">Avg Kelly</span><span class="ls-val" id="ls-avg-kelly">--</span></div>
+    <div class="log-stat"><span class="ls-label">Avg Hurst</span><span class="ls-val" id="ls-avg-hurst">--</span></div>
+  </div>
+
+  <div class="log-table-wrap">
+    <table id="log-table">
+      <thead>
+        <tr>
+          <th onclick="sortBy('round_bucket')">Round</th>
+          <th onclick="sortBy('epoch')">Epoch</th>
+          <th onclick="sortBy('decision_action')">Action</th>
+          <th onclick="sortBy('decision_side')">Side</th>
+          <th onclick="sortBy('actual_outcome')">Actual</th>
+          <th onclick="sortBy('correct')">Result</th>
+          <th onclick="sortBy('lock_price')">Lock $</th>
+          <th onclick="sortBy('close_price')">Close $</th>
+          <th onclick="sortBy('price_change')">Δ Price</th>
+          <th onclick="sortBy('hurst_H')">Hurst H</th>
+          <th onclick="sortBy('hurst_regime')">Regime</th>
+          <th onclick="sortBy('P_up')">P(UP)</th>
+          <th onclick="sortBy('P_down')">P(DN)</th>
+          <th onclick="sortBy('confidence')">Conf</th>
+          <th onclick="sortBy('ev_up')">EV UP</th>
+          <th onclick="sortBy('ev_down')">EV DN</th>
+          <th onclick="sortBy('kelly_pct')">Kelly%</th>
+          <th onclick="sortBy('mult_up')">Mult UP</th>
+          <th onclick="sortBy('mult_down')">Mult DN</th>
+          <th onclick="sortBy('pool_up_pct')">Pool UP%</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody id="log-tbody">
+        <tr><td colspan="20" class="no-data">Loading logs...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<script>
+// ── Chart setup ──────────────────────────────────────────────────────────────
+const CHART_DEFAULTS = {
+  responsive:true, maintainAspectRatio:false,
+  animation:{duration:400},
+  plugins:{legend:{labels:{color:'#9ca3af',font:{size:11}}},tooltip:{mode:'index',intersect:false}},
+  scales:{
+    x:{ticks:{color:'#6b7280',maxTicksLimit:8,font:{size:10}},grid:{color:'#1f2937'}},
+    y:{ticks:{color:'#6b7280',font:{size:10}},grid:{color:'#1f2937'}}
+  }
+};
+
+function mkChart(id, datasets, extra={}) {
+  return new Chart(document.getElementById(id), {
+    type:'line',
+    data:{labels:[],datasets},
+    options:{...CHART_DEFAULTS,...extra}
+  });
+}
+
+const priceChart = mkChart('priceChart', [
+  {label:'Raw Chainlink', data:[], borderColor:'rgba(255,255,255,0.5)', borderWidth:1, pointRadius:0, fill:false},
+  {label:'DWT Smoothed',  data:[], borderColor:'#3b82f6', borderWidth:2.5, pointRadius:0, fill:false},
+]);
+
+const slopeChart = mkChart('slopeChart', [
+  {label:'DWT Slope', data:[], borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0,
+   fill:{target:'origin', above:'rgba(34,197,94,0.15)', below:'rgba(239,68,68,0.15)'}},
+], {
+  plugins:{...CHART_DEFAULTS.plugins,
+    annotation:{annotations:{
+      upper:{type:'line',yMin:0.05,yMax:0.05,borderColor:'rgba(34,197,94,0.5)',borderWidth:1,borderDash:[4,4]},
+      lower:{type:'line',yMin:-0.05,yMax:-0.05,borderColor:'rgba(239,68,68,0.5)',borderWidth:1,borderDash:[4,4]},
+    }}
+  }
+});
+
+const hurstChart = mkChart('hurstChart', [
+  {label:'Hurst H', data:[], borderColor:'#f59e0b', borderWidth:2, pointRadius:0,
+   fill:{target:{value:0.5}, above:'rgba(34,197,94,0.15)', below:'rgba(239,68,68,0.15)'}},
+], {
+  scales:{
+    x:{ticks:{color:'#6b7280',maxTicksLimit:6,font:{size:10}},grid:{color:'#1f2937'}},
+    y:{min:0,max:1,ticks:{color:'#6b7280',font:{size:10}},grid:{color:'#1f2937'}}
+  }
+});
+
+function updateChart(chart, labels, ...datasets) {
+  chart.data.labels = labels;
+  datasets.forEach((d,i) => chart.data.datasets[i].data = d);
+  chart.update('none');
+}
+
+// ── Countdown timer ──────────────────────────────────────────────────────────
+let lockTs = 0, closeTs = 0, startTs = 0;
+function tickCountdown() {
+  const now   = Date.now()/1000;
+  const left  = Math.max(0, lockTs - now);
+  const total = lockTs - startTs;
+  document.getElementById('countdown').textContent = left > 0 ? Math.round(left)+'s' : 'LOCKED';
+  const pct = total > 0 ? Math.max(0, (left/total)*100) : 0;
+  document.getElementById('countdown-bar').style.width = pct+'%';
+  document.getElementById('countdown-bar').style.background = left < 30 ? '#ef4444' : left < 60 ? '#f59e0b' : '#22c55e';
+}
+setInterval(tickCountdown, 1000);
+
+// ── EV bar helper ─────────────────────────────────────────────────────────────
+function setEvBar(id, ev, maxEv) {
+  const el  = document.getElementById(id);
+  const pct = maxEv > 0 ? Math.min(100, Math.abs(ev)/maxEv*100) : 0;
+  el.style.width = pct+'%';
+  el.style.background = ev > 0 ? '#22c55e' : '#ef4444';
+  el.textContent = (ev >= 0 ? '+' : '') + ev.toFixed(3);
+}
+
+// ── Main update ───────────────────────────────────────────────────────────────
+
+// ── Dashboard log filter ──────────────────────────────────────────────────────
+let dashFilter = 'all';
+function setDashFilter(f, btn) {
+  dashFilter = f;
+  document.querySelectorAll('.dash-filter').forEach(b => {
+    b.style.background = '#1f2937'; b.style.color = '#e0e0e0';
+  });
+  if (btn) { btn.style.background = '#f59e0b'; btn.style.color = '#000'; }
+}
+
+function renderDashLog(entries) {
+  const log = document.getElementById('trade-log');
+  if (!log) return;
+  let rows = [...entries].reverse();
+
+  // Apply filter
+  if (dashFilter === 'BET')     rows = rows.filter(e => e.decision_action === 'BET');
+  if (dashFilter === 'WIN')     rows = rows.filter(e => e.correct === true);
+  if (dashFilter === 'LOSS')    rows = rows.filter(e => e.correct === false);
+  if (dashFilter === 'outcome') rows = rows.filter(e => e.actual_outcome !== null && e.actual_outcome !== undefined);
+
+  if (!rows.length) { log.innerHTML = '<div style="color:#6b7280;padding:12px;text-align:center">No entries yet</div>'; return; }
+
+  log.innerHTML = rows.map(e => {
+    const isOutcome = e.actual_outcome !== null && e.actual_outcome !== undefined;
+    const timeStr   = (e.ts||'').substring(11,16);
+    const result    = e.correct===true  ? '<span class="badge win">WIN</span>'
+                    : e.correct===false ? '<span class="badge loss">LOSS</span>'
+                    : '<span style="color:#6b7280;font-size:10px">pending</span>';
+    const sideBadge = e.decision_side
+      ? `<span class="badge ${e.decision_side==='UP'?'up-b':'down-b'}">→${e.decision_side}</span>`
+      : '<span style="color:#6b7280">SKIP</span>';
+    const actualBadge = e.actual_outcome
+      ? `<span class="badge ${e.actual_outcome==='UP'?'up-b':'down-b'}">${e.actual_outcome}</span>`
+      : '<span style="color:#4b5563">--</span>';
+    const pc = e.price_change;
+    const pcStr = pc!==null && pc!==undefined
+      ? `<span class="${pc>=0?'up':'down'}">${pc>=0?'+':''}${pc.toFixed(4)}</span>` : '--';
+    const evStr = e.ev_up!==null
+      ? `<span class="${(e.ev_up||0)>0?'up':'down'}">${(e.ev_up>=0?'+':'')}${(e.ev_up||0).toFixed(2)}</span>`
+        + ' / '
+        + `<span class="${(e.ev_down||0)>0?'up':'down'}">${(e.ev_down>=0?'+':'')}${(e.ev_down||0).toFixed(2)}</span>`
+      : '--';
+    const typeTag = isOutcome
+      ? `<span style="font-size:9px;color:#22c55e">●outcome</span>`
+      : `<span style="font-size:9px;color:#60a5fa">●signal</span>`;
+    return `<div class="trade-row">
+      ${result}
+      <span style="color:#6b7280;font-size:11px">${timeStr}</span>
+      ${typeTag}
+      <span style="color:#9ca3af">ep:${e.epoch||'--'}</span>
+      ${sideBadge}
+      ${actualBadge}
+      <span>$${(e.live_price||0).toFixed(4)}</span>
+      ${pcStr}
+      <span style="color:#9ca3af;font-size:10px">EV:${evStr}</span>
+      <span class="warn" style="font-size:10px">${(e.kelly_pct||0).toFixed(1)}%</span>
+      <span style="color:${(e.hurst_H||0.5)>0.6?'#22c55e':(e.hurst_H||0.5)<0.4?'#ef4444':'#9ca3af'};font-size:10px">H:${(e.hurst_H||0).toFixed(2)}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderVirtualLog(entries) {
+  const el = document.getElementById('virtual-log');
+  if (!el) return;
+  if (!entries || !entries.length) {
+    el.innerHTML = '<div style="color:#6b7280;padding:10px;text-align:center;font-size:11px">Waiting for round outcomes...</div>';
+    return;
+  }
+  el.innerHTML = [...entries].reverse().map(e => {
+    const won   = e.virt_won;
+    const mark  = won ? '✓' : '✗';
+    const color = won ? '#22c55e' : '#ef4444';
+    const side  = e.virt_side || '--';
+    const actual= e.actual || '--';
+    const pnl   = (e.virt_pnl >= 0 ? '+' : '') + (e.virt_pnl||0).toFixed(3);
+    const cum   = (e.virt_cumulative_pnl >= 0 ? '+' : '') + (e.virt_cumulative_pnl||0).toFixed(3);
+    const pup   = (e.pool_up_pct||0).toFixed(1);
+    const mult  = (e.virt_mult||0).toFixed(2);
+    const be    = (e.break_even||0).toFixed(1);
+    const ts    = (e.ts||'').substring(11,16);
+    const signals = e.signals || '';
+    // Parse signals string "pool=DOWN ev=DOWN engine=UP"
+    const sigParts = {};
+    (signals.split(' ')).forEach(s => { const [k,v]=s.split('='); if(k&&v) sigParts[k]=v; });
+    const sigHtml = ['pool','ev','engine'].map(k => {
+      const v = sigParts[k] || '?';
+      const c = v==='UP' ? '#22c55e' : v==='DOWN' ? '#ef4444' : '#6b7280';
+      return `<span style="font-size:9px;color:${c}">${k}:${v}</span>`;
+    }).join(' ');
+    const votesHtml = `<span style="font-size:9px;color:#f59e0b">${e.up_votes||0}↑${e.down_votes||0}↓</span>`;
+    const realTag = e.real_action === 'BET'
+      ? `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#312e81;color:#a5b4fc">REAL BET</span>`
+      : `<span style="font-size:9px;color:#4b5563">skipped</span>`;
+    return `<div class="trade-row" style="flex-wrap:wrap;gap:6px">
+      <span style="color:${color};font-weight:700;font-size:13px">${mark}</span>
+      <span style="color:#6b7280;font-size:11px">${ts}</span>
+      ${realTag}
+      <span style="color:#9ca3af;font-size:10px">ep:${e.epoch||'--'}</span>
+      <span class="badge ${side==='UP'?'up-b':'down-b'}">→${side}</span>
+      <span class="badge ${actual==='UP'?'up-b':'down-b'}">${actual}</span>
+      ${sigHtml}
+      ${votesHtml}
+      <span style="color:#9ca3af;font-size:11px">pool:${pup}%</span>
+      <span style="color:#9ca3af;font-size:11px">${mult}x BE:${be}%</span>
+      <span style="color:${(e.virt_pnl||0)>=0?'#22c55e':'#ef4444'};font-weight:600">${pnl}</span>
+      <span style="color:#f59e0b;font-size:11px">Σ${cum}</span>
+    </div>`;
+  }).join('');
+}
+
+async function refresh() {
+  try {
+    const res  = await fetch('/api/state');
+    const data = await res.json();
+
+    // Status
+    document.getElementById('last-update').textContent = data.last_update || '--';
+    document.getElementById('status-text').textContent = data.status || 'Running';
+    document.getElementById('dot').style.background = data.error ? '#ef4444' : '#22c55e';
+
+    // LSTM Controller panel
+    const lp = data.lstm_params || {};
+    const lstmCard  = document.getElementById('lstm-card');
+    const lstmBadge = document.getElementById('lstm-badge');
+    const isLstm    = lp.source === 'lstm';
+    lstmCard.className  = 'card' + (isLstm ? ' active' : '');
+    lstmBadge.textContent = isLstm ? 'ACTIVE' : (data.lstm_available ? 'WARMING UP' : 'OFFLINE');
+    lstmBadge.style.background = isLstm ? '#312e81' : '#1f2937';
+    lstmBadge.style.color      = isLstm ? '#a5b4fc' : '#6b7280';
+    document.getElementById('lstm-source').textContent = lp.source || 'default';
+    document.getElementById('lstm-source').style.color = isLstm ? '#a5b4fc' : '#f59e0b';
+    document.getElementById('lstm-wl').textContent = lp.wavelet_level || 1;
+    document.getElementById('lstm-hw').textContent = lp.hurst_window  || 400;
+    document.getElementById('lstm-ft').textContent = (lp.fuzzy_threshold || 0.45).toFixed(3);
+    document.getElementById('lstm-st').textContent = (lp.slope_thresh   || 0.07).toFixed(3);
+    document.getElementById('lstm-lb').textContent = lp.lookback || 3;
+    document.getElementById('pool-skew-thresh').textContent = (data.pool_skew_thresh || 65) + '%';
+    // Show decision pool% (used for actual bet decision, may be prev epoch)
+    const pupPct = data.decision_pool_up_pct || data.pool_up_pct || 0;
+    const pupEl  = document.getElementById('pool-up-pct-val');
+    pupEl.textContent = pupPct.toFixed(1) + '%';
+    pupEl.style.color = pupPct >= (data.pool_skew_thresh||65) ? '#ef4444'
+                      : pupPct <= (100-(data.pool_skew_thresh||65)) ? '#22c55e'
+                      : '#9ca3af';
+
+
+    // Live price
+    document.getElementById('live-price').textContent = '$' + (data.live_price||0).toFixed(4);
+
+    // Win rate
+    document.getElementById('win-rate-hdr').textContent = data.win_rate + '%';
+    document.getElementById('wr-detail').textContent =
+      `${data.wins}W / ${data.losses}L — 5-min direction`;
+
+    // Decision card
+    const dec    = data.decision || {};
+    const side   = dec.side || '';
+    const action = dec.action || 'SKIP';
+    const card   = document.getElementById('decision-card');
+    card.className = 'card ' + (action==='BET' ? (side==='UP'?'bet-up':'bet-down') : 'skip');
+    const da = document.getElementById('decision-action');
+    da.textContent = action==='BET' ? `BET ${side}` : 'SKIP';
+    da.className   = 'decision-action ' + (side==='UP'?'up': side==='DOWN'?'down':'skip');
+    document.getElementById('decision-reason').textContent = dec.reason || '';
+    document.getElementById('kelly-pct').textContent  = ((dec.kelly||0)*100).toFixed(1)+'%';
+    document.getElementById('confidence').textContent = (data.confidence||0).toFixed(3);
+    document.getElementById('p-up').textContent   = (data.P_up||0).toFixed(3);
+    document.getElementById('p-down').textContent = (data.P_down||0).toFixed(3);
+
+    // Round
+    const rd = data.round || {};
+    document.getElementById('epoch').textContent      = rd.epoch || '--';
+    lockTs  = rd.lock_ts  || 0;
+    closeTs = rd.close_ts || 0;
+    startTs = rd.start_ts || 0;
+    const lockIn = Math.max(0, Math.round(lockTs - Date.now()/1000));
+    document.getElementById('lock-in').textContent  = lockIn + 's';
+    document.getElementById('lock-price').textContent = rd.lock_price ? '$'+rd.lock_price.toFixed(4) : 'Not set';
+
+    // Hurst
+    const H = data.H || 0.5;
+    document.getElementById('hurst-val').textContent = H.toFixed(3);
+    document.getElementById('hurst-val').style.color = data.hurst_color || '#aaaaaa';
+    document.getElementById('hurst-label').textContent = data.hurst_label || 'RANDOM';
+    document.getElementById('hurst-label').style.color = data.hurst_color || '#aaaaaa';
+
+    // Pool
+    const bull = rd.bull_bnb || 0, bear = rd.bear_bnb || 0, total = rd.total_bnb || 0;
+    const upPct   = total > 0 ? (bull/total*100).toFixed(0) : 50;
+    const downPct = total > 0 ? (bear/total*100).toFixed(0) : 50;
+    document.getElementById('pool-bar-up').style.width   = upPct+'%';
+    document.getElementById('pool-bar-down').style.width = downPct+'%';
+    document.getElementById('pool-bar-up').textContent   = `UP ${upPct}%`;
+    document.getElementById('pool-bar-down').textContent = `${downPct}% DOWN`;
+    document.getElementById('bull-bnb').textContent  = bull.toFixed(4)+' BNB';
+    document.getElementById('bear-bnb').textContent  = bear.toFixed(4)+' BNB';
+    document.getElementById('total-bnb').textContent = total.toFixed(4)+' BNB';
+    document.getElementById('mult-up').textContent   = (rd.mult_up||0).toFixed(2)+'x';
+    document.getElementById('mult-down').textContent = (rd.mult_down||0).toFixed(2)+'x';
+
+    // EV
+    const evUp = dec.ev_up||0, evDown = dec.ev_down||0;
+    const maxEv = Math.max(Math.abs(evUp), Math.abs(evDown), 0.01);
+    setEvBar('ev-bar-up',   evUp,   maxEv);
+    setEvBar('ev-bar-down', evDown, maxEv);
+    const evUpEl   = document.getElementById('ev-up-val');
+    const evDownEl = document.getElementById('ev-down-val');
+    evUpEl.textContent   = (evUp>=0?'+':'')+evUp.toFixed(4);
+    evUpEl.className     = 'metric-value '+(evUp>0?'up':'down');
+    evDownEl.textContent = (evDown>=0?'+':'')+evDown.toFixed(4);
+    evDownEl.className   = 'metric-value '+(evDown>0?'up':'down');
+    document.getElementById('kelly-up').textContent   = ((dec.kelly_up||0)*100).toFixed(1)+'%';
+    document.getElementById('kelly-down').textContent = ((dec.kelly_down||0)*100).toFixed(1)+'%';
+
+    // Markov
+    const mm = data.markov_matrix || {};
+    document.getElementById('m-uu').textContent = (mm['UP->UP']   ||0.5).toFixed(2);
+    document.getElementById('m-ud').textContent = (mm['UP->DOWN'] ||0.5).toFixed(2);
+    document.getElementById('m-du').textContent = (mm['DOWN->UP'] ||0.5).toFixed(2);
+    document.getElementById('m-dd').textContent = (mm['DOWN->DOWN']||0.5).toFixed(2);
+
+    // Outcome strip
+    const strip = document.getElementById('outcomes-strip');
+    strip.innerHTML = (data.outcomes||[]).map(o =>
+      `<span class="outcome-pill ${o}">${o}</span>`).join('');
+
+    // ── Current round status banner ──────────────────────────────────────
+    const crd     = data.current_round_decision || {};
+    const banner  = document.getElementById('round-status-banner');
+    const rsbAct  = document.getElementById('rsb-action');
+    const bSide   = crd.side   || '';
+    const bResult = crd.result || null;
+    const bPhase  = crd.phase  || 'WAITING';
+
+    // Set banner appearance based on phase + result
+    if (bResult === 'WIN') {
+      banner.className = 'bet-up';
+      rsbAct.textContent = '✓ WIN — BET ' + bSide;
+      rsbAct.className   = 'rsb-action up';
+    } else if (bResult === 'LOSS') {
+      banner.className = 'bet-down';
+      rsbAct.textContent = '✗ LOSS — BET ' + bSide;
+      rsbAct.className   = 'rsb-action down';
+    } else if (bResult === 'SKIP') {
+      banner.className = 'skip';
+      rsbAct.textContent = '— SKIP';
+      rsbAct.className   = 'rsb-action skip';
+    } else if (bPhase === 'WAITING') {
+      banner.className = 'skip';
+      rsbAct.textContent = '⏳ WAITING';
+      rsbAct.className   = 'rsb-action warn';
+    } else if (bPhase === 'LOCKED') {
+      banner.className = crd.action==='BET' ? (bSide==='UP'?'bet-up':'bet-down') : 'skip';
+      rsbAct.textContent = crd.action==='BET' ? '🔒 BET '+bSide : '🔒 SKIP';
+      rsbAct.className   = 'rsb-action '+(bSide==='UP'?'up':bSide==='DOWN'?'down':'skip');
+    } else {
+      // LIVE phase
+      banner.className = crd.action==='BET' ? (bSide==='UP'?'bet-up':'bet-down') : 'skip';
+      rsbAct.textContent = crd.action==='BET' ? '🎯 BET '+bSide : '⏭ SKIP';
+      rsbAct.className   = 'rsb-action '+(bSide==='UP'?'up':bSide==='DOWN'?'down':'skip');
+    }
+
+    // Phase tag + result line
+    const rsbResultEl = document.getElementById('rsb-result');
+    let phaseTag = '';
+    if      (bPhase==='WAITING') phaseTag = '<span style="color:#f59e0b;font-size:10px">● WAITING — pool filling</span>';
+    else if (bPhase==='LIVE')    phaseTag = '<span style="color:#60a5fa;font-size:10px">● LIVE — updates every 10s</span>';
+    else if (bPhase==='LOCKED')  phaseTag = '<span style="color:#f59e0b;font-size:10px">🔒 LOCKED at '+(crd.locked_at||'')+'</span>';
+
+    if (bResult === 'WIN') {
+      rsbResultEl.innerHTML = '<span style="color:#22c55e;font-size:16px;font-weight:800">✓ WIN</span> '
+        + (crd.actual ? '<span class="badge up-b">actual: '+crd.actual+'</span>' : '') + ' ' + phaseTag;
+    } else if (bResult === 'LOSS') {
+      rsbResultEl.innerHTML = '<span style="color:#ef4444;font-size:16px;font-weight:800">✗ LOSS</span> '
+        + (crd.actual ? '<span class="badge down-b">actual: '+crd.actual+'</span>' : '') + ' ' + phaseTag;
+    } else if (bResult === 'SKIP') {
+      rsbResultEl.innerHTML = '<span style="color:#6b7280">— SKIP</span> '
+        + (crd.actual ? '<span class="badge '+(crd.actual==='UP'?'up-b':'down-b')+'">actual: '+crd.actual+'</span>' : '')
+        + ' ' + phaseTag;
+    } else {
+      rsbResultEl.innerHTML = phaseTag;
+    }
+
+    document.getElementById('rsb-epoch').textContent     = crd.epoch || '--';
+    document.getElementById('rsb-locked-at').textContent = bPhase==='LOCKED' ? 'locked at '+(crd.locked_at||'') : (bPhase==='LIVE' ? 'updating...' : '');
+    document.getElementById('rsb-lockin').textContent    = Math.max(0, Math.round(lockTs - Date.now()/1000)) + 's';
+
+    const rsbEvUp = crd.ev_up || 0, rsbEvDn = crd.ev_down || 0;
+    const rsbEvUpEl = document.getElementById('rsb-ev-up');
+    const rsbEvDnEl = document.getElementById('rsb-ev-dn');
+    rsbEvUpEl.textContent = (rsbEvUp >= 0 ? '+' : '') + rsbEvUp.toFixed(3);
+    rsbEvUpEl.className   = 'rsb-val ' + (rsbEvUp > 0 ? 'up' : 'down');
+    rsbEvDnEl.textContent = (rsbEvDn >= 0 ? '+' : '') + rsbEvDn.toFixed(3);
+    rsbEvDnEl.className   = 'rsb-val ' + (rsbEvDn > 0 ? 'up' : 'down');
+
+    document.getElementById('rsb-kelly').textContent   = ((crd.kelly || 0) * 100).toFixed(1) + '%';
+    document.getElementById('rsb-pool-up').textContent = (crd.pool_up  || 0).toFixed(4) + ' BNB';
+    document.getElementById('rsb-pool-dn').textContent = (crd.pool_down|| 0).toFixed(4) + ' BNB';
+
+    const rsbH = document.getElementById('rsb-hurst');
+    rsbH.textContent = (crd.H || data.H || 0).toFixed(3) + ' [' + (crd.hurst_label || data.hurst_label || '--') + ']';
+    rsbH.style.color = data.hurst_color || '#aaaaaa';
+
+    document.getElementById('rsb-reason').textContent = crd.reason || '';
+
+    // ── Next round decision status (shown below banner) ───────────────────
+    const nrd = data.next_round_decision || {};
+    const nrdPhase = nrd.phase || 'LIVE';
+    const nrdEl = document.getElementById('rsb-next-label');
+    if (nrdEl) {
+      if (nrdPhase === 'LOCKING') {
+        nrdEl.innerHTML = `<span style="color:#f59e0b;font-weight:700;font-size:12px">⚡ DECISION WINDOW — ${nrd.until_lock}s left to decide next round bet!</span>`;
+        nrdEl.style.background = 'rgba(245,158,11,0.1)';
+        nrdEl.style.border = '1px solid #f59e0b';
+      } else if (nrdPhase === 'LOCKED') {
+        nrdEl.innerHTML = `<span style="color:#60a5fa;font-size:11px">🔒 Next round decision locked: <b>${nrd.action==='BET'?'BET '+nrd.side:'SKIP'}</b></span>`;
+        nrdEl.style.background = 'rgba(96,165,250,0.08)';
+        nrdEl.style.border = '1px solid #374151';
+      } else {
+        nrdEl.innerHTML = `<span style="color:#6b7280;font-size:11px">📡 Next Round Signal updating live — locks in last 30s of round</span>`;
+        nrdEl.style.background = 'transparent';
+        nrdEl.style.border = 'none';
+      }
+    }
+
+    // ── Unified live log ──────────────────────────────────────────────────
+    renderDashLog(data.live_log||[]);
+
+    // ── Virtual bet tracker ───────────────────────────────────────────────
+    const vw  = data.virtual_wins   || 0;
+    const vl  = data.virtual_losses || 0;
+    const vp  = data.virtual_profit || 0;
+    const vwr = data.virtual_wr     || 0;
+    const vtotal = vw + vl;
+    document.getElementById('virt-wr').textContent  = vtotal > 0 ? vwr.toFixed(1)+'%' : '--%';
+    document.getElementById('virt-wr').className    = vtotal > 0 ? (vwr >= 50 ? 'up' : 'down') : 'neutral';
+    document.getElementById('virt-wl').textContent  = `${vw}W / ${vl}L`;
+    document.getElementById('virt-pnl').textContent = (vp >= 0 ? '+' : '') + vp.toFixed(3) + ' BNB';
+    document.getElementById('virt-pnl').className   = vp >= 0 ? 'up' : 'down';
+    renderVirtualLog(data.virtual_log || []);
+
+    // Charts
+    const labels = data.times || [];
+    updateChart(priceChart, labels, data.prices||[], data.smoothed||[]);
+    updateChart(slopeChart, labels, data.slope||[]);
+
+    const hLabels = labels.slice(-data.rolling_hurst.length);
+    updateChart(hurstChart, hLabels, data.rolling_hurst||[]);
+
+  } catch(e) {
+    document.getElementById('status-text').textContent = 'Connection error';
+    document.getElementById('dot').style.background = '#ef4444';
+  }
+}
+
+refresh();
+setInterval(refresh, 10000);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOG VIEWER
+// ═══════════════════════════════════════════════════════════════════════════
+let allLogs    = [];
+let logFilter  = 'all';
+let logSortKey = 'ts';
+let logSortDir = -1;  // -1 = desc, 1 = asc
+
+async function loadLogs() {
+  try {
+    const res  = await fetch('/api/logs?limit=500');
+    const data = await res.json();
+    allLogs = data.entries || [];
+    document.getElementById('log-file-name').textContent = (data.file||'').split('/').pop();
+    renderLogTable();
+  } catch(e) {
+    document.getElementById('log-tbody').innerHTML =
+      '<tr><td colspan="20" class="no-data">Failed to load logs: '+e+'</td></tr>';
+  }
+}
+
+function setFilter(f, btn) {
+  logFilter = f;
+  document.querySelectorAll('.log-toolbar button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderLogTable();
+}
+
+function sortBy(key) {
+  if (logSortKey === key) { logSortDir *= -1; }
+  else { logSortKey = key; logSortDir = -1; }
+  document.querySelectorAll('thead th').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+  });
+  const idx = ['ts','epoch','entry_type','decision_action','decision_side','actual_outcome',
+    'correct','live_price','price_change','hurst_H','hurst_regime','P_up','P_down',
+    'confidence','ev_up','ev_down','kelly_pct','mult_up','mult_down','pool_up_pct',''].indexOf(key);
+  if (idx >= 0) {
+    const th = document.querySelectorAll('thead th')[idx];
+    if (th) th.classList.add(logSortDir === -1 ? 'sort-desc' : 'sort-asc');
+  }
+  renderLogTable();
+}
+
+function getFilteredLogs() {
+  const search = (document.getElementById('log-search')?.value||'').toLowerCase();
+  return allLogs.filter(e => {
+    // Type filter
+    if (logFilter === 'outcome') return e.actual_outcome !== null && e.actual_outcome !== undefined;
+    if (logFilter === 'WIN')     return e.correct === true;
+    if (logFilter === 'LOSS')    return e.correct === false;
+    if (logFilter === 'SKIP')    return e.decision_action === 'SKIP';
+    if (logFilter === 'BET')     return e.decision_action === 'BET';
+    // Search
+    if (search) {
+      const hay = JSON.stringify(e).toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+function mergeByEpoch(entries) {
+  // Group signal + outcome entries by epoch into one merged row
+  const map = {};
+  for (const e of entries) {
+    const ep = e.epoch;
+    if (!map[ep]) map[ep] = { signal: null, outcome: null };
+    if (e.actual_outcome !== null && e.actual_outcome !== undefined) {
+      map[ep].outcome = e;
+    } else {
+      // Keep the latest signal (highest ts) for each epoch
+      if (!map[ep].signal || e.ts > map[ep].signal.ts) map[ep].signal = e;
+    }
+  }
+  // Merge: signal fields + outcome fields overlaid
+  return Object.values(map).map(({signal, outcome}) => {
+    const base = signal || outcome;
+    const merged = Object.assign({}, base);
+    if (outcome) {
+      merged.actual_outcome  = outcome.actual_outcome;
+      merged.correct         = outcome.correct;
+      merged.lock_price      = outcome.lock_price;
+      merged.close_price     = outcome.close_price;
+      merged.price_change    = outcome.price_change;
+      merged.session_win_rate= outcome.session_win_rate;
+      merged.session_wins    = outcome.session_wins;
+      merged.session_losses  = outcome.session_losses;
+      // Use outcome pool data (final values at lock time, not early signal values)
+      if (outcome.bull_bnb  !== null) merged.bull_bnb   = outcome.bull_bnb;
+      if (outcome.bear_bnb  !== null) merged.bear_bnb   = outcome.bear_bnb;
+      if (outcome.total_bnb !== null) merged.total_bnb  = outcome.total_bnb;
+      if (outcome.mult_up   !== null) merged.mult_up    = outcome.mult_up;
+      if (outcome.mult_down !== null) merged.mult_down  = outcome.mult_down;
+      if (outcome.pool_up_pct !== null) merged.pool_up_pct = outcome.pool_up_pct;
+    }
+    merged._has_outcome = !!outcome;
+    merged._has_signal  = !!signal;
+    return merged;
+  });
+}
+
+function renderLogTable() {
+  const sortSel = document.getElementById('log-sort')?.value || 'ts_desc';
+  const allFiltered = getFilteredLogs();
+
+  // Merge signal+outcome into one row per epoch
+  let rows = mergeByEpoch(allFiltered);
+
+  // Apply filter on merged rows
+  if (logFilter === 'WIN')     rows = rows.filter(r => r.correct === true);
+  if (logFilter === 'LOSS')    rows = rows.filter(r => r.correct === false);
+  if (logFilter === 'SKIP')    rows = rows.filter(r => r.decision_action === 'SKIP');
+  if (logFilter === 'BET')     rows = rows.filter(r => r.decision_action === 'BET');
+  if (logFilter === 'outcome') rows = rows.filter(r => r._has_outcome);
+
+  // Sort
+  rows.sort((a,b) => {
+    let av = a[logSortKey] ?? a.epoch ?? '';
+    let bv = b[logSortKey] ?? b.epoch ?? '';
+    if (typeof av === 'string') return av.localeCompare(String(bv)) * logSortDir;
+    return (Number(av) - Number(bv)) * logSortDir;
+  });
+
+  // Stats (from merged rows)
+  const bets   = rows.filter(r => r.decision_action === 'BET');
+  const wins   = rows.filter(r => r.correct === true);
+  const losses = rows.filter(r => r.correct === false);
+  const completed = rows.filter(r => r._has_outcome);
+  const wr     = (wins.length + losses.length) > 0
+                 ? (wins.length / (wins.length + losses.length) * 100).toFixed(1) : '--';
+  const betEvs = bets.filter(r => r.ev_down > 0 || r.ev_up > 0);
+  const avgEv  = betEvs.length > 0
+                 ? (betEvs.reduce((s,r) => s + Math.max(r.ev_up||0, r.ev_down||0), 0) / betEvs.length).toFixed(3) : '--';
+  const avgKelly = bets.length > 0
+                   ? (bets.reduce((s,r) => s + (r.kelly_pct||0), 0) / bets.length).toFixed(1)+'%' : '--';
+  const avgHurst = rows.length > 0
+                   ? (rows.reduce((s,r) => s + (r.hurst_H||0.5), 0) / rows.length).toFixed(3) : '--';
+
+  document.getElementById('ls-total').textContent  = rows.length;
+  document.getElementById('ls-rounds').textContent = completed.length;
+  document.getElementById('ls-bets').textContent   = bets.length;
+  document.getElementById('ls-wins').textContent   = wins.length;
+  document.getElementById('ls-losses').textContent = losses.length;
+  document.getElementById('ls-wr').textContent     = wr + (wr !== '--' ? '%' : '');
+  document.getElementById('ls-avg-ev').textContent    = avgEv;
+  document.getElementById('ls-avg-kelly').textContent = avgKelly;
+  document.getElementById('ls-avg-hurst').textContent = avgHurst;
+
+  if (!rows.length) {
+    document.getElementById('log-tbody').innerHTML =
+      '<tr><td colspan="20" class="no-data">No entries match the filter.</td></tr>';
+    return;
+  }
+
+  const tbody = document.getElementById('log-tbody');
+  tbody.innerHTML = rows.map((e, i) => {
+    const isOutcome = e.actual_outcome !== null && e.actual_outcome !== undefined;
+    const entryType = isOutcome ? 'outcome' : 'signal';
+    const result    = e.correct === true ? 'WIN' : e.correct === false ? 'LOSS' : '--';
+    const resultBadge = e.correct === true  ? '<span class="log-badge WIN">WIN</span>'
+                      : e.correct === false ? '<span class="log-badge LOSS">LOSS</span>'
+                      : '<span style="color:#6b7280">--</span>';
+    const sideBadge = e.decision_side
+      ? `<span class="log-badge ${e.decision_side}">${e.decision_side}</span>` : '--';
+    const actualBadge = e.actual_outcome
+      ? `<span class="log-badge ${e.actual_outcome}">${e.actual_outcome}</span>` : '--';
+    const regimeBadge = e.hurst_regime
+      ? `<span class="log-badge ${e.hurst_regime}">${e.hurst_regime}</span>` : '--';
+    const actionBadge = e.decision_action === 'BET'
+      ? `<span class="log-badge signal">BET</span>`
+      : `<span style="color:#6b7280">SKIP</span>`;
+    const pc = e.price_change;
+    const pcStr = pc !== null && pc !== undefined
+      ? `<span class="${pc>=0?'up':'down'}">${pc>=0?'+':''}${pc.toFixed(4)}</span>` : '--';
+    const evUpStr   = e.ev_up   !== null ? `<span class="${(e.ev_up||0)>=0?'up':'down'}">${(e.ev_up>=0?'+':'')}${(e.ev_up||0).toFixed(3)}</span>` : '--';
+    const evDnStr   = e.ev_down !== null ? `<span class="${(e.ev_down||0)>=0?'up':'down'}">${(e.ev_down>=0?'+':'')}${(e.ev_down||0).toFixed(3)}</span>` : '--';
+    const timeStr   = (e.ts||'').substring(11,19);
+    const dateStr   = (e.ts||'').substring(0,10);
+
+    return `<tr onclick="toggleDetail(${i})" style="cursor:pointer">
+      <td><span style="color:#6b7280;font-size:10px">${dateStr}</span><br/><b>${timeStr}</b></td>
+      <td>${e.epoch||'--'}</td>
+      <td><span class="log-badge ${entryType==='outcome'?'WIN':'signal'}" style="${entryType==='signal'?'background:#1e3a5f;color:#60a5fa':''}">${entryType}</span></td>
+      <td>${actionBadge}</td>
+      <td>${sideBadge}</td>
+      <td>${actualBadge}</td>
+      <td>${resultBadge}</td>
+      <td>$${(e.live_price||0).toFixed(4)}</td>
+      <td>${pcStr}</td>
+      <td style="color:${(e.hurst_H||0.5)>0.6?'#22c55e':(e.hurst_H||0.5)<0.4?'#ef4444':'#9ca3af'}">${(e.hurst_H||0).toFixed(3)}</td>
+      <td>${regimeBadge}</td>
+      <td class="up">${(e.P_up||0).toFixed(3)}</td>
+      <td class="down">${(e.P_down||0).toFixed(3)}</td>
+      <td class="warn">${(e.confidence||0).toFixed(3)}</td>
+      <td>${evUpStr}</td>
+      <td>${evDnStr}</td>
+      <td class="warn">${(e.kelly_pct||0).toFixed(1)}%</td>
+      <td class="up">${(e.mult_up||0).toFixed(2)}x</td>
+      <td class="down">${(e.mult_down||0).toFixed(2)}x</td>
+      <td>${e.pool_up_pct !== null ? (e.pool_up_pct||0).toFixed(0)+'%' : '--'}</td>
+      <td style="color:#6b7280;font-size:10px">▶ expand</td>
+    </tr>
+    <tr class="detail-row" id="detail-${i}">
+      <td colspan="20">
+        <div class="detail-grid">
+          <div class="detail-item"><div class="di-label">Round Bucket</div><div class="di-val">${e.round_bucket||'--'}</div></div>
+          <div class="detail-item"><div class="di-label">Lock Price</div><div class="di-val">${e.lock_price ? '$'+e.lock_price.toFixed(4) : '--'}</div></div>
+          <div class="detail-item"><div class="di-label">Close Price</div><div class="di-val">${e.close_price ? '$'+e.close_price.toFixed(4) : '--'}</div></div>
+          <div class="detail-item"><div class="di-label">DWT Slope</div><div class="di-val">${(e.dwt_slope||0).toFixed(6)}</div></div>
+          <div class="detail-item"><div class="di-label">Markov P(UP)</div><div class="di-val">${(e.markov_p_up||0.5).toFixed(3)}</div></div>
+          <div class="detail-item"><div class="di-label">Bull BNB</div><div class="di-val up">${(e.bull_bnb||0).toFixed(4)} BNB</div></div>
+          <div class="detail-item"><div class="di-label">Bear BNB</div><div class="di-val down">${(e.bear_bnb||0).toFixed(4)} BNB</div></div>
+          <div class="detail-item"><div class="di-label">Total BNB</div><div class="di-val">${(e.total_bnb||0).toFixed(4)} BNB</div></div>
+          <div class="detail-item"><div class="di-label">Decision Reason</div><div class="di-val" style="font-size:11px">${e.decision_reason||'--'}</div></div>
+          <div class="detail-item"><div class="di-label">Session WinRate</div><div class="di-val warn">${e.session_win_rate||0}% (${e.session_wins||0}W/${e.session_losses||0}L)</div></div>
+          <div class="detail-item"><div class="di-label">Markov Matrix</div><div class="di-val" style="font-size:10px">${JSON.stringify(e.markov_matrix||{})}</div></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleDetail(i) {
+  const row = document.getElementById('detail-'+i);
+  if (!row) return;
+  row.style.display = row.style.display === 'table-row' ? 'none' : 'table-row';
+}
+
+function exportCSV() {
+  const rows = getFilteredLogs();
+  if (!rows.length) return;
+  const keys = Object.keys(rows[0]).filter(k => k !== 'markov_matrix');
+  const csv  = [keys.join(','),
+    ...rows.map(r => keys.map(k => {
+      const v = r[k];
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'string' && v.includes(',')) return '"'+v+'"';
+      return v;
+    }).join(','))
+  ].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'pancake_rounds_' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.csv';
+  a.click();
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(id) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  document.querySelector(`[data-tab="${id}"]`).classList.add('active');
+  if (id === 'logs') loadLogs();
+}
+
+</script>
+</body>
+</html>
